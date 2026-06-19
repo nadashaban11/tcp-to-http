@@ -90,6 +90,24 @@ func formResponse(res *Response) []byte {
 	return []byte(response)
 }
 
+var routes = map[string]func(req *Request) *Response{
+	"/": func(req *Request) *Response {
+		return &Response{
+			StatusCode: 200,
+			Body:       "Hello from my home page!",
+		}
+	},
+	"/api/user": func(req *Request) *Response {
+		return &Response{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: `{"name": "Nada", "role": "Backend Engineer"}`,
+		}
+	},
+}
+
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 	req, err := parseRequest(conn)
@@ -99,9 +117,16 @@ func handleConn(conn net.Conn) {
 	}
 	log.Printf("[INFO] %s %s", req.Method, req.Endpoint)
 
-	response := &Response{
-		StatusCode: 200,
-		Body:       "Hello from my HTTP:)",
+	handler := routes[req.Endpoint]
+	var response *Response
+
+	if handler != nil {
+		response = handler(req)
+	} else {
+		response = &Response{
+			StatusCode: 404,
+			Body:       "404 - Not Found",
+		}
 	}
 
 	resBytes := formResponse(response)
