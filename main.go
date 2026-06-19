@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 )
 
 type Request struct {
-	Method   string
-	Endpoint string
-	Version  string
-	Headers  map[string]string
+	Method      string
+	Path        string
+	QueryParams map[string]string
+	Version     string
+	Headers     map[string]string
 }
 
 type Response struct {
@@ -37,11 +39,32 @@ func parseRequest(conn net.Conn) (*Request, error) {
 		return nil, fmt.Errorf("not allowed request line")
 	}
 
+	endpoint := reqParts[1]
+	path := endpoint
+	QueryParams := make(map[string]string)
+
+	if strings.Contains(endpoint, "?") {
+		parts := strings.SplitN(endpoint, "?", 2)
+		path = parts[0]
+		query := parts[1]
+
+		queryParam := strings.Split(query, "&")
+
+		for _, pair := range queryParam {
+			keyVal := strings.SplitN(pair, "=", 2)
+			if len(keyVal) == 2 {
+				QueryParams[keyVal[0]] = keyVal[1]
+			}
+
+		}
+	}
+
 	request := &Request{
-		Method:   reqParts[0],
-		Endpoint: reqParts[1],
-		Version:  reqParts[2],
-		Headers:  make(map[string]string),
+		Method:      reqParts[0],
+		Path:        path,
+		QueryParams: QueryParams,
+		Version:     reqParts[2],
+		Headers:     make(map[string]string),
 	}
 
 	// to get headers
@@ -106,6 +129,23 @@ var routes = map[string]func(req *Request) *Response{
 			Body: `{"name": "Nada", "role": "Backend Engineer"}`,
 		}
 	},
+	"/html-file": func(req *Request) *Response {
+		content, err := os.ReadFile("index.html")
+		if err != nil {
+			log.Printf("[ERROR] Failed to read file: %v", err)
+			return &Response{
+				StatusCode: 500,
+				Body:       "500 - Internal Server Error",
+			}
+		}
+		return &Response{
+			StatusCode: 200,
+			Headers: map[string]string{
+				"Content-Type": "text/html; charset=utf-8",
+			},
+			Body: string(content),
+		}
+	},
 }
 
 func handleConn(conn net.Conn) {
@@ -115,9 +155,9 @@ func handleConn(conn net.Conn) {
 		fmt.Println("failed to parse request", err)
 		return
 	}
-	log.Printf("[INFO] %s %s", req.Method, req.Endpoint)
+	log.Printf("[INFO] %s %s", req.Method, req.Path)
 
-	handler := routes[req.Endpoint]
+	handler := routes[req.Path]
 	var response *Response
 
 	if handler != nil {
