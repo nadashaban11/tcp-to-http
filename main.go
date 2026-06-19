@@ -15,6 +15,14 @@ type Request struct {
 	Headers  map[string]string
 }
 
+type Response struct {
+	Version    string
+	StatusCode int
+	Message    string
+	Headers    map[string]string
+	Body       string
+}
+
 func parseRequest(conn net.Conn) (*Request, error) {
 	reader := bufio.NewReader(conn)
 
@@ -59,6 +67,29 @@ func parseRequest(conn net.Conn) (*Request, error) {
 	return request, nil
 }
 
+func formResponse(res *Response) []byte {
+	if res.Headers == nil {
+		res.Headers = make(map[string]string)
+	}
+	res.Headers["content-length"] = fmt.Sprintf("%d", len(res.Body))
+
+	if _, ok := res.Headers["content-type"]; !ok {
+		res.Headers["content-type"] = "text/plain"
+	}
+
+	statusMsg := getStatusMsg(res.StatusCode)
+
+	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n", res.StatusCode, statusMsg)
+
+	for key, val := range res.Headers {
+		response += fmt.Sprintf("%s: %s\r\n", key, val)
+	}
+
+	response += fmt.Sprintf("\r\n%s", res.Body)
+
+	return []byte(response)
+}
+
 func handleConn(conn net.Conn) {
 	defer conn.Close()
 	req, err := parseRequest(conn)
@@ -68,9 +99,29 @@ func handleConn(conn net.Conn) {
 	}
 	log.Printf("[INFO] %s %s", req.Method, req.Endpoint)
 
-	body := "hello from my HTTP:)"
-	response := fmt.Sprintf("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
-	conn.Write([]byte(response))
+	response := &Response{
+		StatusCode: 200,
+		Body:       "Hello from my HTTP:)",
+	}
+
+	resBytes := formResponse(response)
+
+	conn.Write(resBytes)
+}
+
+func getStatusMsg(code int) string {
+	switch code {
+	case 200:
+		return "OK"
+	case 404:
+		return "Not Found"
+	case 400:
+		return "Bad Request"
+	case 500:
+		return "Internal Server Error"
+	default:
+		return "Unknown"
+	}
 }
 
 func main() {
