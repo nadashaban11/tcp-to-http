@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -15,6 +18,7 @@ type Request struct {
 	QueryParams map[string]string
 	Version     string
 	Headers     map[string]string
+	Body        []byte
 }
 
 type Response struct {
@@ -87,6 +91,16 @@ func parseRequest(conn net.Conn) (*Request, error) {
 
 		request.Headers[key] = val
 	}
+	contentLen, hasLen := request.Headers["Content-Length"]
+
+	if hasLen {
+		len, err := strconv.Atoi(contentLen)
+		if err == nil && len > 0 {
+			body := make([]byte, len)
+			io.ReadFull(reader, body)
+			request.Body = body
+		}
+	}
 	return request, nil
 }
 
@@ -114,13 +128,13 @@ func formResponse(res *Response) []byte {
 }
 
 var routes = map[string]func(req *Request) *Response{
-	"/": func(req *Request) *Response {
+	"GET /": func(req *Request) *Response {
 		return &Response{
 			StatusCode: 200,
 			Body:       "Hello from my home page!",
 		}
 	},
-	"/api/user": func(req *Request) *Response {
+	"GET /api/user": func(req *Request) *Response {
 		return &Response{
 			StatusCode: 200,
 			Headers: map[string]string{
@@ -129,7 +143,40 @@ var routes = map[string]func(req *Request) *Response{
 			Body: `{"name": "Nada", "role": "Backend Engineer"}`,
 		}
 	},
-	"/html-file": func(req *Request) *Response {
+
+	"POST /api/user": func(req *Request) *Response {
+
+		if len(req.Body) == 0 {
+			return &Response{
+				StatusCode: 400,
+				Body:       `{"error": "Empty Request Body"}`,
+			}
+		}
+
+		var userData map[string]interface{}
+		err := json.Unmarshal(req.Body, &userData)
+		if err != nil {
+			return &Response{
+				StatusCode: 400,
+				Body:       `{"error": "Invalid JSON format"}`,
+			}
+		}
+
+		name := userData["name"]
+		log.Printf("MOCK] Saving user: %v ", name)
+
+		responseJSON := fmt.Sprintf(`{"message": "Welcome %v, your profile is created successfully!"}`, name)
+
+		return &Response{
+			StatusCode: 201,
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: responseJSON,
+		}
+	},
+
+	"GET /html-file": func(req *Request) *Response {
 		content, err := os.ReadFile("index.html")
 		if err != nil {
 			log.Printf("[ERROR] Failed to read file: %v", err)
@@ -157,7 +204,9 @@ func handleConn(conn net.Conn) {
 	}
 	log.Printf("[INFO] %s %s", req.Method, req.Path)
 
-	handler := routes[req.Path]
+	routerKey := req.Method + " " + req.Path
+
+	handler := routes[routerKey]
 	var response *Response
 
 	if handler != nil {
@@ -178,6 +227,8 @@ func getStatusMsg(code int) string {
 	switch code {
 	case 200:
 		return "OK"
+	case 201:
+		return "Created"
 	case 404:
 		return "Not Found"
 	case 400:
