@@ -33,7 +33,8 @@ curl -X POST http://localhost:8080/api/user \
      -d '{"name":"Nada", "role":"Backend Engineer"}'
 ```
 
-
+## High-level data flow
+![High-level data flow](./data-flow.png)
 
 ## This http was built to explore web internals:
 
